@@ -51,10 +51,12 @@ class IndexTTS25Engine:
         use_qwen: bool = False,
         verbose: bool = False,
         return_subtitles: bool = True,
+        # 后训练 GPT checkpoint 的绝对路径；None = config.yaml 默认
+        gpt_checkpoint: Optional[str] = None,
     ) -> Tuple[int, np.ndarray, Optional[str]]:
-        # use_emo_text 需要 QwenEmotion 模型（use_qwen_emo=True 构造）
+        # use_emo_text 需要 QwenEmotion 模型（按需挂载到当前实例）
         need_qwen = bool(use_qwen)
-        tts = self.loader.get_tts(use_qwen_emo=need_qwen)
+        tts = self.loader.get_tts(use_qwen_emo=need_qwen, gpt_checkpoint=gpt_checkpoint)
 
         if reference_audio is None:
             raise ValueError("reference_audio is required for IndexTTS-2.5")

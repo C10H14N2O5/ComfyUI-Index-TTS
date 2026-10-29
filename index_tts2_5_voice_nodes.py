@@ -196,7 +196,8 @@ class IndexTTS25ExtractVoiceNode(_IndexTTS25BaseMixin):
     @torch.no_grad()
     def extract(self, reference_audio):
         wave, sr = self._process_audio_input(reference_audio)
-        tts = self.loader.get_tts(use_qwen_emo=False)
+        # 音色提取与 GPT 无关：复用当前实例（不触发 checkpoint 切换），没有则加载默认
+        tts = self.loader.get_current_or_default_tts()
 
         audio = torch.as_tensor(wave, dtype=torch.float32)
         if audio.ndim == 1:
@@ -384,8 +385,9 @@ class IndexTTS25VoiceBaseNode(_IndexTTS25BaseMixin):
         text_normalization=True,
         seed=0,
         cache_control=None,
+        gpt_checkpoint=None,
     ):
-        tts = self.loader.get_tts(use_qwen_emo=False)
+        tts = self.loader.get_tts(use_qwen_emo=False, gpt_checkpoint=self._gpt_path(gpt_checkpoint))
         cache_key = self._prime_voice_cache(tts, voice)
 
         seed_everything(seed)

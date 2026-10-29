@@ -3,11 +3,16 @@ import torch
 import numpy as np
 from typing import Any, Tuple
 
-from .indextts2_5 import IndexTTS25Loader, IndexTTS25Engine
+import os
+
+from .indextts2_5 import IndexTTS25Loader, IndexTTS25Engine, DEFAULT_GPT_CHOICE
 
 # Global shared loader/engine to avoid duplicating model weights across nodes
 _GLOBAL_LOADER = IndexTTS25Loader()
 _GLOBAL_ENGINE = IndexTTS25Engine(_GLOBAL_LOADER)
+
+# GPT Checkpoint Selector 的输出类型
+GPT_CHECKPOINT_TYPE = "INDEXTTS25_GPT"
 _EMO_VECTOR_BIAS = (0.75, 0.70, 0.80, 0.80, 0.75, 0.75, 0.55, 0.45)
 
 # IndexTTS-2.5 官方支持语种（ZH/EN 混合为额外常用项）
@@ -79,7 +84,20 @@ class _IndexTTS25BaseMixin:
             "seed": ("INT", {"default": 0, "min": 0, "max": 2**32 - 1}),
             # External cache control dict from utility node
             "cache_control": ("DICT", {"default": None}),
+            # 后训练 GPT checkpoint（来自 GPT Checkpoint Selector）；不连线 = config.yaml 默认
+            "gpt_checkpoint": (GPT_CHECKPOINT_TYPE,),
         }
+
+    @staticmethod
+    def _gpt_path(spec):
+        """Selector output -> absolute checkpoint path, or None for config default."""
+        if not spec:
+            return None
+        if isinstance(spec, dict):
+            return spec.get("path") or None
+        if isinstance(spec, str):  # tolerate a plain choice string
+            return _GLOBAL_LOADER.resolve_gpt_checkpoint(spec)
+        raise ValueError(f"gpt_checkpoint must come from GPT Checkpoint Selector, got {type(spec)!r}")
 
     def _do_generate(self, engine: IndexTTS25Engine, **kwargs):
         sr, wave, sub = engine.generate(**kwargs)
@@ -120,7 +138,7 @@ class IndexTTS25BaseNode(_IndexTTS25BaseMixin):
                  do_sample_mode="on", temperature=0.8, top_p=0.8, top_k=30, num_beams=3,
                  repetition_penalty=10.0, length_penalty=0.0, max_mel_tokens=1500,
                  max_tokens_per_sentence=120, interval_silence_ms=200, text_normalization=True,
-                 seed=0, cache_control=None):
+                 seed=0, cache_control=None, gpt_checkpoint=None):
         ref = self._process_audio_input(reference_audio)
         out = self._do_generate(
             self.engine,
@@ -131,6 +149,7 @@ class IndexTTS25BaseNode(_IndexTTS25BaseMixin):
             interval_silence=interval_silence_ms, text_normalization=text_normalization,
             emo_text=None, emo_ref_audio=None, emo_vector=None, emo_weight=1.0,
             seed=seed, return_subtitles=True,
+            gpt_checkpoint=self._gpt_path(gpt_checkpoint),
         )
         self._maybe_unload(cache_control)
         return out
@@ -163,7 +182,7 @@ class IndexTTS25EmotionAudioNode(_IndexTTS25BaseMixin):
                  do_sample_mode="on", temperature=0.8, top_p=0.8, top_k=30, num_beams=3,
                  repetition_penalty=10.0, length_penalty=0.0, max_mel_tokens=1500,
                  max_tokens_per_sentence=120, interval_silence_ms=200, text_normalization=True,
-                 seed=0, cache_control=None):
+                 seed=0, cache_control=None, gpt_checkpoint=None):
         ref = self._process_audio_input(reference_audio)
         emo_ref = self._process_audio_input(emo_ref_audio)
         out = self._do_generate(
@@ -175,6 +194,7 @@ class IndexTTS25EmotionAudioNode(_IndexTTS25BaseMixin):
             interval_silence=interval_silence_ms, text_normalization=text_normalization,
             emo_text=None, emo_ref_audio=emo_ref, emo_vector=None, emo_weight=float(emotion_weight),
             seed=seed, return_subtitles=True,
+            gpt_checkpoint=self._gpt_path(gpt_checkpoint),
         )
         self._maybe_unload(cache_control)
         return out
@@ -216,7 +236,7 @@ class IndexTTS25EmotionVectorNode(_IndexTTS25BaseMixin):
                  do_sample_mode="on", temperature=0.8, top_p=0.8, top_k=30, num_beams=3,
                  repetition_penalty=10.0, length_penalty=0.0, max_mel_tokens=1500,
                  max_tokens_per_sentence=120, interval_silence_ms=200, text_normalization=True,
-                 seed=0, cache_control=None, Love=None):
+                 seed=0, cache_control=None, gpt_checkpoint=None, Love=None):
         ref = self._process_audio_input(reference_audio)
         low_value = Low if Love is None else Love
         vec = [Happy, Angry, Sad, Fear, Hate, low_value, Surprise, Neutral]
@@ -231,6 +251,7 @@ class IndexTTS25EmotionVectorNode(_IndexTTS25BaseMixin):
             emo_text=None, emo_ref_audio=None, emo_vector=emo_vec, emo_weight=1.0,
             use_random=use_random,
             seed=seed, return_subtitles=True,
+            gpt_checkpoint=self._gpt_path(gpt_checkpoint),
         )
         self._maybe_unload(cache_control)
         return out
@@ -266,7 +287,7 @@ class IndexTTS25EmotionTextNode(_IndexTTS25BaseMixin):
                  do_sample_mode="on", temperature=0.8, top_p=0.8, top_k=30, num_beams=3,
                  repetition_penalty=10.0, length_penalty=0.0, max_mel_tokens=1500,
                  max_tokens_per_sentence=120, interval_silence_ms=200, text_normalization=True,
-                 seed=0, cache_control=None):
+                 seed=0, cache_control=None, gpt_checkpoint=None):
         ref = self._process_audio_input(reference_audio)
         emo_text = emotion_description.strip() if isinstance(emotion_description, str) else ""
         out = self._do_generate(
@@ -282,6 +303,7 @@ class IndexTTS25EmotionTextNode(_IndexTTS25BaseMixin):
             use_qwen=True,
             verbose=True,
             seed=seed, return_subtitles=True,
+            gpt_checkpoint=self._gpt_path(gpt_checkpoint),
         )
         self._maybe_unload(cache_control)
         return out
@@ -308,3 +330,41 @@ class IndexTTS25CacheControlNode:
             "keep_cached": bool(keep_models_cached),
         }
         return (ctrl,)
+
+
+class IndexTTS25GPTCheckpointSelectorNode:
+    """
+    选择后训练 GPT checkpoint（models/IndexTTS-2.5/gpt_checkpoints/**.pth）。
+    输出连到合成节点的 gpt_checkpoint 输入；同一 checkpoint 复用缓存，不同则先卸载旧实例再加载。
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        choices = [DEFAULT_GPT_CHOICE] + _GLOBAL_LOADER.list_gpt_checkpoints()
+        return {"required": {"gpt_checkpoint": (choices, {"default": DEFAULT_GPT_CHOICE})}}
+
+    RETURN_TYPES = (GPT_CHECKPOINT_TYPE,)
+    RETURN_NAMES = ("gpt_checkpoint",)
+    FUNCTION = "select"
+    CATEGORY = "audio"
+    DESCRIPTION = ("IndexTTS-2.5 GPT checkpoint 选择：列出 models/IndexTTS-2.5/gpt_checkpoints/ 下的 .pth，"
+                   "(config default) 为 config.yaml 中的 gpt.pth；新放入的文件需刷新页面")
+
+    @classmethod
+    def IS_CHANGED(cls, gpt_checkpoint):
+        try:
+            path = _GLOBAL_LOADER.resolve_gpt_checkpoint(gpt_checkpoint)
+            if path is None:
+                return DEFAULT_GPT_CHOICE
+            st = os.stat(path)
+            return f"{gpt_checkpoint}:{st.st_mtime_ns}:{st.st_size}"
+        except Exception:
+            return float("nan")
+
+    def select(self, gpt_checkpoint=DEFAULT_GPT_CHOICE):
+        path = _GLOBAL_LOADER.resolve_gpt_checkpoint(gpt_checkpoint)
+        spec = {"name": gpt_checkpoint, "path": path, "mtime_ns": None, "size": None}
+        if path is not None:
+            st = os.stat(path)
+            spec["mtime_ns"], spec["size"] = st.st_mtime_ns, st.st_size
+        return (spec,)

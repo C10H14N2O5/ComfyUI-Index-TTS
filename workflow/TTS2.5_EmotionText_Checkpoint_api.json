@@ -1,0 +1,67 @@
+{
+  "1": {
+    "inputs": {
+      "audio": "reference.wav"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "加载参考音频"
+    }
+  },
+  "2": {
+    "inputs": {
+      "text": "大家好，这是使用后训练模型和情感文本控制生成的语音。",
+      "lang": "ZH",
+      "duration_factor": 1,
+      "emotion_description": "",
+      "emotion_weight": 0.6,
+      "do_sample_mode": "on",
+      "temperature": 0.8,
+      "top_p": 0.8,
+      "top_k": 30,
+      "num_beams": 3,
+      "repetition_penalty": 10,
+      "length_penalty": 0,
+      "max_mel_tokens": 1500,
+      "max_tokens_per_sentence": 120,
+      "interval_silence_ms": 200,
+      "text_normalization": true,
+      "seed": 0,
+      "reference_audio": ["1", 0],
+      "cache_control": ["3", 0],
+      "gpt_checkpoint": ["5", 0]
+    },
+    "class_type": "IndexTTS25EmotionTextNode",
+    "_meta": {
+      "title": "Index TTS 2.5 - Emotion Text"
+    }
+  },
+  "3": {
+    "inputs": {
+      "keep_models_cached": true
+    },
+    "class_type": "IndexTTS25CacheControlNode",
+    "_meta": {
+      "title": "Index TTS 2.5 - Cache Control"
+    }
+  },
+  "4": {
+    "inputs": {
+      "filename_prefix": "IndexTTS2_5/checkpoint",
+      "audio": ["2", 0]
+    },
+    "class_type": "SaveAudio",
+    "_meta": {
+      "title": "保存音频"
+    }
+  },
+  "5": {
+    "inputs": {
+      "gpt_checkpoint": "(config default)"
+    },
+    "class_type": "IndexTTS25GPTCheckpointSelectorNode",
+    "_meta": {
+      "title": "Index TTS 2.5 - GPT Checkpoint Selector"
+    }
+  }
+}

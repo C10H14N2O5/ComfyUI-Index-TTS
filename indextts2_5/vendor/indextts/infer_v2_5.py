@@ -19,7 +19,7 @@ from omegaconf import OmegaConf
 
 from indextts.codec.models import EnhancedCodec
 from indextts.gpt.model_v2 import UnifiedVoice
-from indextts.utils.checkpoint import load_checkpoint
+from indextts.utils.checkpoint import load_checkpoint, load_gpt_checkpoint_strict
 from indextts.utils.front import TextNormalizer
 from indextts.utils.tokenizer import get_tokenizer, lang_to_token
 from indextts.utils.ja_g2p import JapaneseG2PProcessor
@@ -75,7 +75,8 @@ def apply_pronunciation_annotations(text: str) -> str:
 class IndexTTS2:
     def __init__(
             self, cfg_path="checkpoints/config.yaml", model_dir="checkpoints", use_bf16=False, device=None,
-            use_cuda_kernel=None,use_deepspeed=False, use_accel=False, use_torch_compile=False, use_qwen_emo=False
+            use_cuda_kernel=None,use_deepspeed=False, use_accel=False, use_torch_compile=False, use_qwen_emo=False,
+            gpt_checkpoint=None,
     ):
         """
         Args:
@@ -90,6 +91,9 @@ class IndexTTS2:
             use_qwen_emo (bool): if True, load the QwenEmotion text-to-emotion model.
                 Required for ``infer(..., use_emo_text=True)``. Attempting to use emotion-text
                 guidance when this is disabled will raise a RuntimeError.
+            gpt_checkpoint (None | str): [ComfyUI-Index-TTS patch] absolute path of a GPT
+                checkpoint overriding ``cfg.gpt_checkpoint`` (config.yaml is left untouched).
+                Loaded with strict key checking; None keeps the upstream behaviour.
         """
         if device is not None:
             self.device = device
@@ -136,8 +140,13 @@ class IndexTTS2:
             print(">> QwenEmotion not loaded (use_qwen_emo=False)")
 
         self.gpt = UnifiedVoice(**self.cfg.gpt, use_accel=self.use_accel, spk_cond_mode="campplus")
-        self.gpt_path = os.path.join(self.model_dir, self.cfg.gpt_checkpoint)
-        load_checkpoint(self.gpt, self.gpt_path)
+        # [ComfyUI-Index-TTS patch] 允许用参数覆盖 gpt_checkpoint（后训练模型），不修改 config.yaml
+        if gpt_checkpoint:
+            self.gpt_path = gpt_checkpoint
+            load_gpt_checkpoint_strict(self.gpt, self.gpt_path)
+        else:
+            self.gpt_path = os.path.join(self.model_dir, self.cfg.gpt_checkpoint)
+            load_checkpoint(self.gpt, self.gpt_path)
         self.gpt = self.gpt.to(self.device)
         if self.use_bf16:
             self.gpt.eval().bfloat16()
