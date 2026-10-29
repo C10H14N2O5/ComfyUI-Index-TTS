@@ -23,7 +23,9 @@
   - 日语假名：`彼は料理が<上手|じょうず>だ`
 - **情感控制**：情感参考音频 / 8 维情感向量 / Qwen 情感文本分析
 - **音色持久化**：一次提取参考音频的 conditioning 保存为 `.pt`，之后直接复用
-- **bf16 推理**（CUDA），显存/缓存可控
+- **后训练模型切换**：GPT Checkpoint Selector 选择不同的 `gpt.pth`（如 LoRA 微调合并后的权重），同一工作流模板另存为不同角色
+- **可复现**：相同 checkpoint + 参考音频 + 文本 + `seed` 生成相同音频
+- **bf16 推理**（CUDA），显存/缓存可控，支持 ComfyUI `/free` 卸载
 
 ## 节点
 
@@ -34,12 +36,15 @@
 | `Index TTS 2.5 - Emotion Vector` | 8 维情感向量滑条：高兴/愤怒/悲伤/恐惧/反感/低落/惊讶/平静 |
 | `Index TTS 2.5 - Emotion Text` | 情感描述控制，留空则自动分析主文本情感（需要 Qwen 情感模型） |
 | `Index TTS 2.5 - Cache Control` | 生成后是否保留模型在显存中 |
+| `Index TTS 2.5 - GPT Checkpoint Selector` | 选择后训练 GPT checkpoint，连到合成节点的 `gpt_checkpoint` 输入 |
 | `Index TTS 2.5 - Extract Voice` | 从参考音频提取音色 conditioning |
 | `Index TTS 2.5 - Save Voice` | 将音色 conditioning 保存到 `output/`（`.pt`） |
 | `Index TTS 2.5 - Load Voice` | 从 `input/` / `output/` 选择或上传 `.pt` 音色 |
 | `Index TTS 2.5 - Voice Base` | 使用已保存的音色 conditioning 直接合成 |
 
-示例工作流：`./workflow/TTS2.5.json`（直接拖进 ComfyUI 页面即可导入）。
+示例工作流：
+- `./workflow/TTS2.5.json`（直接拖进 ComfyUI 页面即可导入）
+- `./workflow/TTS2.5_EmotionText_Checkpoint_api.json`：Emotion Text + GPT Checkpoint Selector，API 格式（可直接导入 ComfyBridge；在 ComfyUI 中用「打开」加载）
 
 ## 安装
 
@@ -144,12 +149,44 @@ python .\ComfyUI\custom_nodes\ComfyUI-Index-TTS\TTS2_5_download.py
 
 `LoadAudio → Extract Voice → Save Voice` 保存一次音色（`.pt`，默认在 `output/IndexTTS2.5/`），之后用 `Load Voice → Voice Base` 直接合成，无需再处理参考音频。`Load Voice` 节点上有「上传 .pt」按钮，可从本地上传音色文件。
 
+### 后训练模型（GPT Checkpoint）
+
+后训练 / 微调只替换 GPT 部分（`gpt.pth`），codec、s2mel、BigVGAN、w2v-bert、CampPlus、Qwen 均沿用官方文件。
+
+1. 把 checkpoint 放到 `ComfyUI/models/IndexTTS-2.5/gpt_checkpoints/`（可再分子目录）：
+
+   ```text
+   ComfyUI/models/IndexTTS-2.5/gpt_checkpoints/
+   │  ChihayaAnon.pth
+   └─NagasakiSoyo
+          best_model.pth
+   ```
+
+2. 添加 `Index TTS 2.5 - GPT Checkpoint Selector`，输出连到合成节点（Base / Emotion Audio / Emotion Vector / Emotion Text / Voice Base）的 `gpt_checkpoint` 输入。
+   - `(config default)` = `config.yaml` 中的 `gpt_checkpoint`（`gpt.pth`）；**不连 Selector 时同样使用它**，旧工作流无需修改。
+   - 新放入的文件需**刷新 ComfyUI 页面**后才会出现在下拉框。
+3. 同一个工作流模板另存为不同角色（例如 `IndexTTS-2.5-ChihayaAnon`、`IndexTTS-2.5-NagasakiSoyo`），各自选择 checkpoint 和参考音频。
+
+缓存行为：显存中最多只有一个 IndexTTS 实例。
+
+- 目标 checkpoint 与当前实例相同 → 直接复用；
+- 不同 → 先完整卸载旧实例（含 Qwen）并清理显存，再加载新实例，耗时约等于一次冷启动；
+- 同名文件被覆盖（修改时间/大小变化）也会自动重新加载。
+
+格式要求：完整的 GPT 权重。支持纯 state dict、`{"model": ...}` / `{"state_dict": ...}` 包装和 `module.` 前缀，[index-tts25-lora-finetune](https://github.com/hxyinan/index-tts25-lora-finetune) 输出的 `best_model.pth` / `epoch_N.pth`（LoRA 已合并）可直接放入，无需再提取 `ckpt['model']`。缺少权重（例如只有 LoRA 增量、或结构不匹配）会直接报错并列出缺失项；多余的 key（如 `inference_model.*`）只打印警告。
+
+`Extract Voice` 提取的音色与 GPT 无关：它复用当前已加载的实例，不会触发 checkpoint 切换。
+
 ### 显存/缓存控制
 
 `Index TTS 2.5 - Cache Control` 输出 `{"keep_cached": true/false}`，连到各合成节点的 `cache_control` 输入：
 
 - 关闭（默认）：推理结束后卸载模型并清理 CUDA 缓存，适合 12GB 显卡日常使用。
 - 开启：保留已加载的权重，连续多次生成更快，但显存占用更高。
+
+保留缓存时，也可以随时用 ComfyUI 的 **`POST /free`**（`{"unload_models": true}`）或界面上的 **Unload Models** 按钮卸载 IndexTTS-2.5（含 Qwen）。ComfyUI 日志会出现 `[IndexTTS2.5] unloaded (..., ComfyUI /free)`。
+
+> 实现方式：插件在启动时包装 `comfy.model_management.unload_all_models`（日志：`/free hook installed`）。升级 ComfyUI 后若 `/free` 不再释放显存，请检查这两条日志。
 
 ### 主要参数
 
@@ -160,6 +197,7 @@ python .\ComfyUI\custom_nodes\ComfyUI-Index-TTS\TTS2_5_download.py
 - **max_tokens_per_sentence** (120)：长文本分句的最大 token 数
 - **interval_silence_ms** (200)：句间静音
 - **text_normalization**：是否做文本归一化（数字等）
+- **seed**：随机种子。相同 checkpoint + 参考音频 + 文本 + seed 生成相同音频；想要不同结果就换 seed
 
 ## 常见问题
 

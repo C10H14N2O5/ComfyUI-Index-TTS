@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 # 本地模型目录参考副本（权重为占位文件），不入库
 IndexTTS-2.5/
+# 本地笔记 / 待办（如 ComfyBridge 修改清单）
+temp/
