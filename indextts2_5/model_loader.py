@@ -96,7 +96,7 @@ class IndexTTS25Loader:
 
         try:
             # Purge any previously imported 'indextts' top-level modules to avoid
-            # shadowing between indextts2/vendor (v2) and indextts2_5/vendor (v2.5)
+            # shadowing by other packages/custom nodes that also ship an 'indextts' package
             for k in list(sys.modules.keys()):
                 if k == "indextts" or k.startswith("indextts."):
                     sys.modules.pop(k, None)
