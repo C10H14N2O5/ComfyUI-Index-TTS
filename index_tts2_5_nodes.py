@@ -5,11 +5,13 @@ from typing import Any, Tuple
 
 import os
 
-from .indextts2_5 import IndexTTS25Loader, IndexTTS25Engine, DEFAULT_GPT_CHOICE
+from .indextts2_5 import IndexTTS25Loader, IndexTTS25Engine, DEFAULT_GPT_CHOICE, install_free_hook
 
 # Global shared loader/engine to avoid duplicating model weights across nodes
 _GLOBAL_LOADER = IndexTTS25Loader()
 _GLOBAL_ENGINE = IndexTTS25Engine(_GLOBAL_LOADER)
+# ComfyUI /free（及界面 Unload Models）同时卸载 IndexTTS-2.5
+install_free_hook(_GLOBAL_LOADER)
 
 # GPT Checkpoint Selector 的输出类型
 GPT_CHECKPOINT_TYPE = "INDEXTTS25_GPT"

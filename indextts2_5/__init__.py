@@ -5,10 +5,12 @@ IndexTTS-2.5 integration package for ComfyUI
 
 from .model_loader import IndexTTS25Loader, DEFAULT_GPT_CHOICE, GPT_CHECKPOINT_DIRNAME
 from .infer import IndexTTS25Engine
+from .comfy_integration import install_free_hook
 
 __all__ = [
     "IndexTTS25Loader",
     "IndexTTS25Engine",
     "DEFAULT_GPT_CHOICE",
     "GPT_CHECKPOINT_DIRNAME",
+    "install_free_hook",
 ]
