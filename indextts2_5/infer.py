@@ -4,7 +4,7 @@ import torch
 from typing import Optional, Tuple
 
 from .model_loader import IndexTTS25Loader
-from .utils import save_temp_wav
+from .utils import save_temp_wav, seed_everything
 
 
 class IndexTTS25Engine:
@@ -89,6 +89,9 @@ class IndexTTS25Engine:
 
         # 语速控制参数范围 0.5 - 2.0，超出则截断
         _duration_factor = max(0.5, min(2.0, float(duration_factor)))
+
+        # 固定随机种子：同 checkpoint + 参考音频 + 文本 + seed 可复现
+        seed_everything(seed)
 
         # Call upstream infer; output_path=None returns (sr, wav_int16_numpy_TxC)
         result = tts.infer(

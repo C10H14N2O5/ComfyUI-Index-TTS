@@ -14,6 +14,7 @@ from .index_tts2_5_nodes import (
     _GLOBAL_LOADER,
     _IndexTTS25BaseMixin,
 )
+from .indextts2_5.utils import seed_everything
 
 
 VOICE_TYPE = "INDEXTTS25_VOICE"
@@ -387,9 +388,7 @@ class IndexTTS25VoiceBaseNode(_IndexTTS25BaseMixin):
         tts = self.loader.get_tts(use_qwen_emo=False)
         cache_key = self._prime_voice_cache(tts, voice)
 
-        torch.manual_seed(int(seed))
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(int(seed))
+        seed_everything(seed)
 
         result = tts.infer(
             spk_audio_prompt=cache_key,

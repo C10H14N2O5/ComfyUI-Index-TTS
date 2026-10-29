@@ -1,8 +1,20 @@
 import os
+import random
 import tempfile
 import numpy as np
 import soundfile as sf
+import torch
 from typing import Tuple
+
+
+def seed_everything(seed) -> None:
+    """Seed python/numpy/torch(+CUDA) so the same seed reproduces the same audio."""
+    seed = int(seed or 0)
+    random.seed(seed)
+    np.random.seed(seed % (2 ** 32))
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def save_temp_wav(wave_sr: Tuple[np.ndarray, int]) -> str:
