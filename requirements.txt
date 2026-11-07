@@ -16,7 +16,9 @@ einops
 matplotlib>=3.8.0        # BigVGAN utils
 accelerate>=1.8.0        # Qwen 情感模型 device_map
 # DAC（s2mel 依赖）及其依赖
-descript-audiotools==0.7.2
+# 0.7.4 仅发布在 GitHub（PyPI 最新为 0.7.2，限制 protobuf<3.20）；0.7.4 放宽为 protobuf>=3.19.6,!=4.24.0,<5
+descript-audiotools @ https://github.com/descriptinc/audiotools/archive/refs/tags/0.7.4.zip
+protobuf>=4.25.8,<5      # 4.25.8 修复 CVE-2025-4565；上限受 audiotools 0.7.4 约束
 ffmpy
 docstring-parser
 # 文本前端 / 多语言分词
